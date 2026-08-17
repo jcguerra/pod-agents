@@ -1,0 +1,17 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local credentials (never commit)
+.env
+
+# Local tooling
+.claude/settings.local.json
+
+# macOS
+.DS_Store
+
+# CSV files
+csv/

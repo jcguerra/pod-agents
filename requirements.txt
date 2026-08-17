@@ -1,0 +1,20 @@
+# Dependencias de pod-agents.
+# Recomendado: Python 3.11 o 3.12 (3.14 puede no tener wheels de las deps aún).
+#
+#   python3.12 -m venv venv
+#   ./venv/bin/pip install -r requirements.txt
+#
+# Tras instalar, fijá las versiones exactas con:
+#   ./venv/bin/pip freeze > requirements.lock.txt
+
+strands-agents>=0.1.0
+strands-agents-tools>=0.1.0
+ollama>=0.3.0
+anthropic>=0.39.0
+
+# Persistencia (Postgres) — Base de Keywords y demás bases del manual
+psycopg[binary]>=3.2
+python-dotenv>=1.0
+
+# UI (Fase 3) — mini-panel sobre el mismo backend + Postgres
+streamlit>=1.38

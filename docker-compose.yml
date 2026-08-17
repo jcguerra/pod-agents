@@ -1,0 +1,27 @@
+# Postgres local para pod-agents — estado persistente (Bases del manual, Anexo B).
+# Arrancar:  docker compose up -d
+# Parar:     docker compose down          (los datos persisten en el volumen)
+# Reset:     docker compose down -v        (BORRA los datos y re-corre db/init)
+services:
+  db:
+    image: postgres:16
+    container_name: pod_agents_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pod_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-pod_agents}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pod_pgdata:/var/lib/postgresql/data
+      # Los .sql de esta carpeta se ejecutan UNA vez, al inicializar el volumen vacío.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pod} -d ${POSTGRES_DB:-pod_agents}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pod_pgdata:
