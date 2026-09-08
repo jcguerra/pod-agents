@@ -1,131 +1,132 @@
-# Pipeline POD para Etsy — sistema multiagente (Strands + Ollama)
+# POD Pipeline for Etsy — multi-agent system (Strands + Ollama)
 
-Sistema multiagente que recorre, de punta a punta, el flujo de una tienda
-Print-on-Demand en Etsy:
+Multi-agent system that walks, end to end, the workflow of a Print-on-Demand
+store on Etsy:
 
 ```
 direction → research → validation → design → production → marketing → operations
                               │
-                              └─ compuerta: si RECHAZA, vuelve a investigación
+                              └─ gate: if REJECTED, goes back to research
 ```
 
-Cada etapa es un agente de [Strands](https://strandsagents.com) con un rol
-acotado. La orquestación es un **Graph** determinístico con una compuerta de
-validación. La decisión de validación la calcula **código** (no el LLM), leyendo
-datos reales de un export de eRank.
+Each stage is a [Strands](https://strandsagents.com) agent with a narrow role.
+Orchestration is a deterministic **Graph** with a validation gate. The validation
+decision is computed by **code** (not by the LLM), reading real data from an eRank
+export.
 
 ---
 
-## Estructura
+## Structure
 
 ```
 pod-agents/
-├── main.py                 # punto de entrada: python main.py
-├── config.py               # marca, modelos (LOCAL/HOSTED), contexto de marca
-├── pipeline.py             # arma el grafo: nodos, edges y compuertas
-├── tracing.py              # trazas por nodo y por tool (hooks de Strands)
-├── requirements.txt        # dependencias
-├── docker-compose.yml      # Postgres 16 local (estado persistente)
-├── .env                    # credenciales locales de dev
-├── db/init/001_keywords.sql    # esquema inicial (Base de Keywords)
-├── eRank_-_Bulk_Keywords.csv   # tu export de eRank (poné el tuyo acá)
+├── main.py                 # entry point: python main.py
+├── config.py               # brand, models (LOCAL/HOSTED), brand context
+├── pipeline.py             # builds the graph: nodes, edges and gates
+├── tracing.py              # per-node and per-tool traces (Strands hooks)
+├── requirements.txt        # dependencies
+├── docker-compose.yml      # local Postgres 16 (persistent state)
+├── .env                    # local dev credentials
+├── db/init/001_keywords.sql    # initial schema (Keywords Base)
+├── eRank_-_Bulk_Keywords.csv   # your eRank export (drop yours here)
 ├── tools/
-│   ├── erank_tools.py      # tools REALES sobre el CSV + veredicto determinístico
-│   ├── pod_tools.py        # tools de marca/diseño/producción/publicación (mock)
-│   └── db_tools.py         # persistencia Postgres (Base de Keywords)
+│   ├── erank_tools.py      # REAL tools over the CSV + deterministic verdict
+│   ├── pod_tools.py        # brand/design/production/publishing tools (mock)
+│   └── db_tools.py         # Postgres persistence (Keywords Base)
 └── agents/
     ├── director.py  researcher.py  validator.py  designer.py
     └── producer.py  marketer.py  operations.py
 ```
 
-Cada agente expone `build(tracer) -> Agent`. El grafo se arma en `pipeline.py`
-importando esas funciones.
+Every agent exposes `build(tracer) -> Agent`. The graph is assembled in
+`pipeline.py` by importing those functions.
 
 ---
 
-## Requisitos previos
+## Prerequisites
 
-1. **Python 3.11 o 3.12** (recomendado). Versiones muy nuevas como 3.14 pueden
-   no tener wheels de las dependencias todavía.
-2. **Ollama** corriendo con el modelo local:
+1. **Python 3.11 or 3.12** (recommended). Very new versions such as 3.14 may not
+   have wheels for the dependencies yet.
+2. **Ollama** running with the local model:
    ```bash
-   ollama serve            # en otra terminal (en Mac, la app ya lo hace)
-   ollama list             # confirmá que aparece qwen3.5:9b
+   ollama serve            # in another terminal (on Mac, the app already does it)
+   ollama list             # confirm qwen3.5:9b shows up
    ```
-   Si no lo tenés: `ollama pull qwen3.5:9b`
-3. Tu **export de eRank** (Bulk Keywords) guardado como
-   `eRank_-_Bulk_Keywords.csv` en la raíz del proyecto.
-4. **Docker** (para el Postgres de estado persistente). Opcional hoy: el pipeline
-   corre sin la base; se vuelve requisito cuando se cablee la persistencia.
+   If you don't have it: `ollama pull qwen3.5:9b`
+3. Your **eRank export** (Bulk Keywords) saved as
+   `eRank_-_Bulk_Keywords.csv` at the project root.
+4. **Docker** (for the persistent-state Postgres). Optional today: the pipeline
+   runs without the database; it becomes a requirement once persistence is wired in.
 
 ---
 
-## Instalación (paso a paso)
+## Installation (step by step)
 
-Desde la carpeta del proyecto (`pod-agents/`):
+From the project folder (`pod-agents/`):
 
 ```bash
-# 1. Crear el entorno virtual con Python 3.12
+# 1. Create the virtual environment with Python 3.12
 python3.12 -m venv venv
 
-# 2. Instalar dependencias
+# 2. Install dependencies
 ./venv/bin/pip install -r requirements.txt
 
-# 3. (Opcional) Fijar versiones exactas para reproducibilidad
+# 3. (Optional) Pin exact versions for reproducibility
 ./venv/bin/pip freeze > requirements.lock.txt
 ```
 
-> También podés activar el venv con `source venv/bin/activate` y luego usar
-> `pip`/`python` sin el prefijo `./venv/bin/`.
+> You can also activate the venv with `source venv/bin/activate` and then use
+> `pip`/`python` without the `./venv/bin/` prefix.
 
 ---
 
-## Ejecutar
+## Running
 
 ```bash
 ./venv/bin/python main.py
 ```
 
-Verás en consola:
+You'll see in the console:
 
-- Las **trazas por nodo y por tool** en tiempo real (símbolos `▶`/`✔`/`↳`).
-- El **tiempo total** del pipeline.
-- El **resultado de cada nodo** ejecutado, con separadores.
+- The **per-node and per-tool traces** in real time (symbols `▶`/`✔`/`↳`).
+- The **total time** of the pipeline.
+- The **result of each executed node**, with separators.
 
 ---
 
-## Base de datos (Postgres con Docker)
+## Database (Postgres with Docker)
 
-El proyecto usa Postgres para el **estado persistente** del negocio (las "Bases" del
-manual operativo: Keywords, y a futuro Ideas, Productos, Ventas, etc.). Hoy solo está
-creada la tabla `keywords`. El pipeline todavía **no** la usa; es el próximo paso.
+The project uses Postgres for the business's **persistent state** (the "Bases" from
+the operations manual: Keywords, and later Ideas, Products, Sales, etc.). Today only
+the `keywords` table is created. The pipeline does **not** use it yet; that's the
+next step.
 
 ```bash
-# Levantar la base (crea el esquema de db/init la primera vez)
+# Start the database (creates the db/init schema the first time)
 docker compose up -d
 
-# Parar (los datos persisten en el volumen pod_pgdata)
+# Stop it (data persists in the pod_pgdata volume)
 docker compose down
 
-# Reset total (BORRA los datos y vuelve a correr db/init)
+# Full reset (DELETES the data and re-runs db/init)
 docker compose down -v
 ```
 
-- **Conexión:** `postgresql://pod:pod_local_dev@localhost:5432/pod_agents` (ver `.env`).
-- **Consola SQL:** `docker exec -it pod_agents_db psql -U pod -d pod_agents`
-- **Credenciales:** están en `.env` (dev local). Si inicializás git, agregá `.env` al `.gitignore`.
-- **Esquema:** los `.sql` de `db/init/` corren solo al inicializar el volumen vacío. Para
-  agregar tablas nuevas creá `db/init/002_*.sql` y hacé `docker compose down -v && up -d`
-  (⚠️ borra datos), o aplicá el SQL a mano por `psql`.
+- **Connection:** `postgresql://pod:pod_local_dev@localhost:5432/pod_agents` (see `.env`).
+- **SQL console:** `docker exec -it pod_agents_db psql -U pod -d pod_agents`
+- **Credentials:** they live in `.env` (local dev). If you initialize git, add `.env` to `.gitignore`.
+- **Schema:** the `.sql` files in `db/init/` run only when initializing an empty volume. To
+  add new tables create `db/init/002_*.sql` and run `docker compose down -v && up -d`
+  (⚠️ deletes data), or apply the SQL by hand through `psql`.
 
 ---
 
-## Guía de usuario
+## User guide
 
-### Cambiar el objetivo de negocio
+### Changing the business objective
 
-El objetivo que arranca el pipeline está en `main.py`, variable `objetivo`.
-Editá esa frase en lenguaje natural. Ejemplo:
+The objective that kicks off the pipeline is in `main.py`, variable `objetivo`.
+Edit that natural-language sentence. Example:
 
 ```python
 objetivo = (
@@ -134,82 +135,82 @@ objetivo = (
 )
 ```
 
-Dirección lo interpreta y define un nicho concreto; el resto del flujo sigue.
+Direction interprets it and defines a concrete niche; the rest of the flow follows.
 
-### Cómo funciona la compuerta de validación
+### How the validation gate works
 
-- El nodo **research** recomienda 3 keywords con datos reales de eRank y las guarda
-  en la Base con `record_researched_keywords`.
-- El nodo **validation** llama a la tool `validate_and_record_niche`, que calcula por
-  código (no por el LLM) si el nicho es `APPROVED` o `REJECTED`:
-  - cada keyword debe cumplir umbrales de demanda/competencia, **y**
-  - ninguna frase de diseño puede rozar una marca de la blocklist.
-  Además persiste cada `decision` (fit/unfit) en la tabla `keywords`.
-- Si `APPROVED` → sigue a **design**.
-- Si `REJECTED` → vuelve a **research** para reintentar.
+- The **research** node recommends 3 keywords using real eRank data and stores them
+  in the Base with `record_researched_keywords`.
+- The **validation** node calls the `validate_and_record_niche` tool, which computes by
+  code (not by the LLM) whether the niche is `APPROVED` or `REJECTED`:
+  - every keyword must meet the demand/competition thresholds, **and**
+  - no design phrase may brush against a trademark in the blocklist.
+  It also persists each `decision` (fit/unfit) in the `keywords` table.
+- If `APPROVED` → it moves on to **design**.
+- If `REJECTED` → it goes back to **research** to retry.
 
-La salida del validador termina siempre con la línea exacta
-`VERDICT: APPROVED` o `VERDICT: REJECTED`, que es lo que lee la compuerta.
+The validator's output always ends with the exact line
+`VERDICT: APPROVED` or `VERDICT: REJECTED`, which is what the gate reads.
 
-### Ajustar los umbrales de validación
+### Tuning the validation thresholds
 
-En `tools/erank_tools.py`:
+In `tools/erank_tools.py`:
 
-| Constante         | Qué controla                                  | Default   |
+| Constant          | What it controls                              | Default   |
 |-------------------|-----------------------------------------------|-----------|
-| `MIN_SEARCHES`    | demanda mínima para que valga la pena         | `200`     |
-| `MAX_COMPETITION` | techo de listings compitiendo (saturación)    | `250_000` |
-| `MAX_DIFFICULTY`  | dificultad máxima (0–100)                      | `100`     |
+| `MIN_SEARCHES`    | minimum demand for it to be worth it          | `200`     |
+| `MAX_COMPETITION` | ceiling of competing listings (saturation)    | `250_000` |
+| `MAX_DIFFICULTY`  | maximum difficulty (0–100)                    | `100`     |
 
-Subir `MIN_SEARCHES` o bajar `MAX_COMPETITION` = criterio más exigente.
+Raising `MIN_SEARCHES` or lowering `MAX_COMPETITION` = stricter criteria.
 
-### Ajustar la marca y las reglas de negocio
+### Tuning the brand and the business rules
 
-En `config.py`, `STORE_CONFIG`: nombre de la tienda, voz de marca, proveedor POD,
-margen objetivo, precio techo y `blocklist_marcas` (marcas prohibidas en diseños).
-Esos valores se inyectan en el prompt de todos los agentes vía `brand_context()`.
+In `config.py`, `STORE_CONFIG`: store name, brand voice, POD provider, target
+margin, price ceiling and `blocklist_marcas` (trademarks banned from designs).
+Those values are injected into every agent's prompt via `brand_context()`.
 
-### Usar un modelo hosted para validación (recomendado en producción)
+### Using a hosted model for validation (recommended in production)
 
-El nodo de validación es el más sensible (riesgo legal de marcas). Para usarlo con
-un modelo hosted más confiable, en `config.py`:
+The validation node is the most sensitive one (legal trademark risk). To run it with
+a more reliable hosted model, in `config.py`:
 
-1. Descomentá las dos líneas de `AnthropicModel`.
-2. Comentá `HOSTED = LOCAL`.
-3. Exportá tu API key: `export ANTHROPIC_API_KEY=...`
+1. Uncomment the two `AnthropicModel` lines.
+2. Comment out `HOSTED = LOCAL`.
+3. Export your API key: `export ANTHROPIC_API_KEY=...`
 
-Solo el nodo de validación usará el modelo hosted; el resto sigue en local ($0).
+Only the validation node will use the hosted model; the rest stays local ($0).
 
-### Probar las tools sin levantar el pipeline
+### Testing the tools without starting the pipeline
 
-Las tools de eRank corren de forma aislada (útil para verificar el CSV y los
-umbrales sin gastar en el modelo). Se ejecuta **como módulo desde la raíz**
-(no como `python tools/erank_tools.py`, que rompe los imports del paquete):
+The eRank tools run in isolation (useful to check the CSV and the thresholds
+without spending on the model). Run it **as a module from the root**
+(not as `python tools/erank_tools.py`, which breaks the package imports):
 
 ```bash
 ./venv/bin/python -m tools.erank_tools
 ```
 
-Imprime: stats de una keyword, top de oportunidades, validaciones individuales y
-un ejemplo de veredicto determinístico.
+It prints: stats for a keyword, top opportunities, individual validations and
+an example of a deterministic verdict.
 
-### Publicación y gate humano
+### Publishing and the human gate
 
-**Operaciones** deja el listing en **DRAFT** y nunca publica de forma definitiva:
-la publicación real requiere aprobación humana. Las integraciones reales
-(Printify/Printful, Etsy API, trademark screening, generador de imágenes) hoy
-están mockeadas en `tools/pod_tools.py`, marcadas con `>>> INTEGRACIÓN REAL`.
+**Operations** leaves the listing in **DRAFT** and never publishes for real:
+actual publishing requires human approval. The real integrations
+(Printify/Printful, Etsy API, trademark screening, image generator) are
+mocked today in `tools/pod_tools.py`, marked with `>>> INTEGRACIÓN REAL`.
 
 ---
 
-## Problemas comunes
+## Common problems
 
-| Síntoma                                        | Causa probable / solución                                              |
+| Symptom                                        | Likely cause / fix                                                     |
 |------------------------------------------------|------------------------------------------------------------------------|
-| `ModuleNotFoundError: No module named 'strands'` | El venv está vacío o no lo estás usando. Reinstalá con `requirements.txt`. |
-| Falla al instalar dependencias                 | Python demasiado nuevo (p. ej. 3.14). Usá 3.11/3.12.                    |
-| El pipeline se cuelga tras validación          | El modelo no emitió la línea `VERDICT: ...`. Probá validación hosted. |
-| `Connection refused` a `localhost:11434`       | Ollama no está corriendo. Ejecutá `ollama serve`.                      |
-| El nicho no encuentra keywords                 | El CSV no está en la raíz o tiene otro nombre. Revisá `ERANK_CSV`.     |
+| `ModuleNotFoundError: No module named 'strands'` | The venv is empty or you're not using it. Reinstall with `requirements.txt`. |
+| Dependency install fails                       | Python too new (e.g. 3.14). Use 3.11/3.12.                             |
+| The pipeline hangs after validation            | The model didn't emit the `VERDICT: ...` line. Try hosted validation.  |
+| `Connection refused` to `localhost:11434`      | Ollama isn't running. Run `ollama serve`.                              |
+| The niche finds no keywords                    | The CSV isn't at the root or has another name. Check `ERANK_CSV`.      |
 
-> La ruta del CSV se puede forzar con la variable de entorno `ERANK_CSV`.
+> The CSV path can be forced with the `ERANK_CSV` environment variable.
